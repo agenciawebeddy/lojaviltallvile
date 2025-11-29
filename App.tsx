@@ -129,7 +129,7 @@ const App: React.FC = () => {
       const { data: settingsData, error: settingsError } = await supabase.from('store_settings').select('*').eq('id', 1).single();
       let currentStoreSettings = defaultStoreSettings;
       if (settingsError) {
-        console.error('Error fetching store settings:', settingsError);
+        console.error('Error fetching store settings:', JSON.stringify(settingsError, null, 2));
       } else {
         currentStoreSettings = settingsData || defaultStoreSettings;
       }
