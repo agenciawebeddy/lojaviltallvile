@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.get_admin_dashboard_stats() TO authenticated;
