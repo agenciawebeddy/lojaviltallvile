@@ -178,6 +178,18 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
 
     if (rpcError) throw rpcError;
 
+    // Formatação dos itens do carrinho para o e-mail
+    const formattedCartItems = cartItems.map(item => {
+        const itemPrice = calculateItemPrice(item);
+        const variantDescription = [item.selectedVariant.color_name, item.selectedVariant.color, item.selectedVariant.size]
+            .filter(Boolean)
+            .join(' / ');
+        
+        const priceFormatted = formatPrice(itemPrice * item.quantity);
+        
+        return `${item.quantity}x ${item.name} (${variantDescription || 'Padrão'}) - ${priceFormatted}`;
+    }).join('\n');
+
     // Enviar e-mail de confirmação do pedido via EmailJS
     try {
       await emailjs.send(
@@ -187,18 +199,14 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
           to_name: formData.fullName,
           customer_email: formData.email,
           order_id: newOrderId,
-          message: JSON.stringify(cartItems.map(item => ({
-              name: item.name,
-              quantity: item.quantity,
-              price: calculateItemPrice(item),
-              variant: item.selectedVariant.color_name || item.selectedVariant.color || item.selectedVariant.size || 'N/A'
-          })), null, 2)
+          message: formattedCartItems // Usando a string formatada
         },
         "jOZo1dRNn4uZBaV9T"
       );
       console.log("E-mail de confirmação enviado com sucesso!");
     } catch (emailError: any) {
       console.error("Falha ao enviar e-mail de confirmação:", emailError);
+      // Não interrompe o fluxo de checkout, apenas loga o erro
     }
 
     // Registrar a etiqueta de envio (assíncrono)
