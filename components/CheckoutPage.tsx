@@ -6,6 +6,7 @@ import { Session } from '@supabase/supabase-js';
 import MercadoPagoBrick from './MercadoPagoBrick';
 import PageHeader from '../src/components/PageHeader';
 import usePageHeader from '../src/hooks/usePageHeader'; // Importando o hook
+import emailjs from "@emailjs/browser"; // Importando a biblioteca EmailJS
 
 interface CheckoutPageProps {
   cartItems: CartItem[];
@@ -175,13 +176,37 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
 
       if (rpcError) throw rpcError;
 
-      // 2. Registrar a etiqueta de envio
+      // 2. Enviar e-mail de confirmação do pedido via EmailJS
+      try {
+        await emailjs.send(
+          "service_58xpkyb",
+          "template_cmiacto",
+          {
+            to_name: formData.fullName,
+            customer_email: formData.email,
+            order_id: newOrderId,
+            message: JSON.stringify(cartItems.map(item => ({
+                name: item.name,
+                quantity: item.quantity,
+                price: calculateItemPrice(item),
+                variant: item.selectedVariant.color_name || item.selectedVariant.color || item.selectedVariant.size || 'N/A'
+            })), null, 2)
+          },
+          "jOZo1dRNn4uZBaV9T"
+        );
+        console.log("E-mail de confirmação enviado com sucesso!");
+      } catch (emailError: any) {
+        console.error("Falha ao enviar e-mail de confirmação:", emailError);
+        // Não interrompe o fluxo de checkout, apenas loga o erro
+      }
+
+      // 3. Registrar a etiqueta de envio
       supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
         .then(({ error: functionError }) => {
           if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
         });
 
-      // 3. Processar o pagamento com o ID do pedido
+      // 4. Processar o pagamento com o ID do pedido
       const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
         body: {
           ...paymentFormData,
