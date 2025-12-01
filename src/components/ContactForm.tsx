@@ -6,7 +6,7 @@ const ContactForm: React.FC = () => {
   const formRef = useRef<HTMLFormElement>(null); // Usando useRef para capturar o formulário
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    email: '', // Mantemos 'email' no estado local para controle do input
     phone: '',
     message: '',
   });
@@ -17,15 +17,20 @@ const ContactForm: React.FC = () => {
   // Variáveis de configuração do EmailJS
   const publicKey = "jOZo1dRNn4uZBaV9T";
   const templateId = "template_j8xf9aa";
-  const serviceId = "service_58xpkyb"; // Service ID fornecido pelo usuário
+  const serviceId = "service_58xpkyb"; 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // Se o campo for 'mail' (que é o name do input), atualizamos o estado 'email'
+    if (name === 'mail') {
+      setFormData(prev => ({ ...prev, email: value }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); // 1. Prevenir o refresh.
+    e.preventDefault();
     setIsLoading(true);
     setStatus('idle');
     setMessage(null);
@@ -38,30 +43,29 @@ const ContactForm: React.FC = () => {
       return;
     }
     
-    // A verificação do serviceId não é mais necessária, pois ele já foi preenchido.
-    // if (serviceId === "YOUR_EMAILJS_SERVICE_ID") {
-    //     console.error("Erro: O serviceId do EmailJS não foi configurado. Por favor, substitua 'YOUR_EMAILJS_SERVICE_ID' pelo seu Service ID real.");
-    //     setStatus('error');
-    //     setMessage('Erro de configuração: O Service ID do EmailJS não foi preenchido.');
-    //     setIsLoading(false);
-    //     return;
-    // }
-
     try {
-      // 2. Chamar emailjs.sendForm
       if (formRef.current) {
+        // Adicionando um campo oculto para 'time' se você quiser enviar a hora atual
+        // Ou você pode configurar o template do EmailJS para usar uma variável de data/hora
+        const now = new Date();
+        const timeField = document.createElement('input');
+        timeField.type = 'hidden';
+        timeField.name = 'time';
+        timeField.value = now.toLocaleString('pt-BR'); // Formato de data/hora local
+        formRef.current.appendChild(timeField);
+
         await emailjs.sendForm(serviceId, templateId, formRef.current, {
           publicKey: publicKey,
         });
         setStatus('success');
         setMessage('Sua mensagem foi enviada com sucesso! Em breve entraremos em contato.');
         setFormData({ name: '', email: '', phone: '', message: '' }); // Clear form
+        formRef.current.removeChild(timeField); // Remove o campo oculto após o envio
       } else {
         throw new Error("Formulário não encontrado.");
       }
     } catch (err: any) {
       console.error('Erro ao enviar mensagem:', err);
-      // Tenta extrair uma mensagem de erro mais útil do objeto EmailJSResponseStatus
       const errorMessage = err.text || err.message || 'Tente novamente mais tarde.';
       setStatus('error');
       setMessage(`Erro ao enviar mensagem: ${errorMessage}`);
@@ -73,13 +77,13 @@ const ContactForm: React.FC = () => {
   return (
     <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-md">
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Envie-nos uma Mensagem</h2>
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4"> {/* Atribuindo a ref ao formulário */}
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">Nome Completo</label>
           <input
             type="text"
             id="name"
-            name="name" // Adicionado o atributo name para o EmailJS
+            name="name" // Corresponde a {{name}}
             value={formData.name}
             onChange={handleChange}
             className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500"
@@ -91,7 +95,7 @@ const ContactForm: React.FC = () => {
           <input
             type="email"
             id="email"
-            name="email" // Adicionado o atributo name para o EmailJS
+            name="mail" // ALTERADO: Corresponde a {{mail}}
             value={formData.email}
             onChange={handleChange}
             className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500"
@@ -103,7 +107,7 @@ const ContactForm: React.FC = () => {
           <input
             type="tel"
             id="phone"
-            name="phone" // Adicionado o atributo name para o EmailJS
+            name="phone" // Este campo não tem correspondência no seu template atual
             value={formData.phone}
             onChange={handleChange}
             className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500"
@@ -114,7 +118,7 @@ const ContactForm: React.FC = () => {
           <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">Mensagem</label>
           <textarea
             id="message"
-            name="message" // Adicionado o atributo name para o EmailJS
+            name="message" // Corresponde a {{message}}
             value={formData.message}
             onChange={handleChange}
             rows={5}
