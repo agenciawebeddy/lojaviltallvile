@@ -17,8 +17,7 @@ const ContactForm: React.FC = () => {
   // Variáveis de configuração do EmailJS
   const publicKey = "jOZo1dRNn4uZBaV9T";
   const templateId = "template_j8xf9aa";
-  // IMPORTANTE: Substitua "YOUR_EMAILJS_SERVICE_ID" pelo seu Service ID real do EmailJS
-  const serviceId = "YOUR_EMAILJS_SERVICE_ID"; 
+  const serviceId = "service_58xpkyb"; // Service ID fornecido pelo usuário
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -39,14 +38,14 @@ const ContactForm: React.FC = () => {
       return;
     }
     
-    // Verifica se o serviceId foi preenchido
-    if (serviceId === "YOUR_EMAILJS_SERVICE_ID") {
-        console.error("Erro: O serviceId do EmailJS não foi configurado. Por favor, substitua 'YOUR_EMAILJS_SERVICE_ID' pelo seu Service ID real.");
-        setStatus('error');
-        setMessage('Erro de configuração: O Service ID do EmailJS não foi preenchido.');
-        setIsLoading(false);
-        return;
-    }
+    // A verificação do serviceId não é mais necessária, pois ele já foi preenchido.
+    // if (serviceId === "YOUR_EMAILJS_SERVICE_ID") {
+    //     console.error("Erro: O serviceId do EmailJS não foi configurado. Por favor, substitua 'YOUR_EMAILJS_SERVICE_ID' pelo seu Service ID real.");
+    //     setStatus('error');
+    //     setMessage('Erro de configuração: O Service ID do EmailJS não foi preenchido.');
+    //     setIsLoading(false);
+    //     return;
+    // }
 
     try {
       // 2. Chamar emailjs.sendForm
