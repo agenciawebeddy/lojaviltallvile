@@ -16,10 +16,9 @@ const ContactForm: React.FC = () => {
 
   // Variáveis de configuração do EmailJS
   const publicKey = "jOZo1dRNn4uZBaV9T";
-  // A privateKey não é usada diretamente no cliente para sendForm
-  // const privateKey = "zCjfc4L9CVhrrgi1KxbaY"; 
   const templateId = "template_j8xf9aa";
-  const serviceId = "YOUR_EMAILJS_SERVICE_ID"; // Crie uma variável para eu preencher depois.
+  // IMPORTANTE: Substitua "YOUR_EMAILJS_SERVICE_ID" pelo seu Service ID real do EmailJS
+  const serviceId = "YOUR_EMAILJS_SERVICE_ID"; 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -39,13 +38,21 @@ const ContactForm: React.FC = () => {
       setIsLoading(false);
       return;
     }
+    
+    // Verifica se o serviceId foi preenchido
+    if (serviceId === "YOUR_EMAILJS_SERVICE_ID") {
+        console.error("Erro: O serviceId do EmailJS não foi configurado. Por favor, substitua 'YOUR_EMAILJS_SERVICE_ID' pelo seu Service ID real.");
+        setStatus('error');
+        setMessage('Erro de configuração: O Service ID do EmailJS não foi preenchido.');
+        setIsLoading(false);
+        return;
+    }
 
     try {
       // 2. Chamar emailjs.sendForm
       if (formRef.current) {
         await emailjs.sendForm(serviceId, templateId, formRef.current, {
           publicKey: publicKey,
-          // privateKey não é uma opção válida para sendForm no cliente
         });
         setStatus('success');
         setMessage('Sua mensagem foi enviada com sucesso! Em breve entraremos em contato.');
@@ -55,8 +62,10 @@ const ContactForm: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Erro ao enviar mensagem:', err);
+      // Tenta extrair uma mensagem de erro mais útil do objeto EmailJSResponseStatus
+      const errorMessage = err.text || err.message || 'Tente novamente mais tarde.';
       setStatus('error');
-      setMessage(`Erro ao enviar mensagem: ${err.message || 'Tente novamente mais tarde.'}`);
+      setMessage(`Erro ao enviar mensagem: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
