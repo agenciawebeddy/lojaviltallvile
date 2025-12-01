@@ -16,7 +16,8 @@ const ContactForm: React.FC = () => {
 
   // Variáveis de configuração do EmailJS
   const publicKey = "jOZo1dRNn4uZBaV9T";
-  const privateKey = "zCjfc4L9CVhrrgi1KxbaY";
+  // A privateKey não é usada diretamente no cliente para sendForm
+  // const privateKey = "zCjfc4L9CVhrrgi1KxbaY"; 
   const templateId = "template_j8xf9aa";
   const serviceId = "YOUR_EMAILJS_SERVICE_ID"; // Crie uma variável para eu preencher depois.
 
@@ -44,7 +45,7 @@ const ContactForm: React.FC = () => {
       if (formRef.current) {
         await emailjs.sendForm(serviceId, templateId, formRef.current, {
           publicKey: publicKey,
-          privateKey: privateKey,
+          // privateKey não é uma opção válida para sendForm no cliente
         });
         setStatus('success');
         setMessage('Sua mensagem foi enviada com sucesso! Em breve entraremos em contato.');
