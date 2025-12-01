@@ -105,6 +105,7 @@ export interface StoreSettings {
   logo_height?: number; // NOVO CAMPO
   logo_width?: number; // NOVO CAMPO
   global_discount_percentage?: number; // NOVO CAMPO
+  payment_on_delivery_active?: boolean; // NOVO CAMPO
 }
 
 export interface PageHeaderData {

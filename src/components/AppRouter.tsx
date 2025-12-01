@@ -76,6 +76,7 @@ const AppRouter: React.FC<AppRouterProps> = ({
     free_shipping_threshold: 0,
     free_shipping_message: '',
     global_discount_percentage: 0,
+    payment_on_delivery_active: false, // NOVO DEFAULT
   };
 
   const currentSettings = storeSettings || defaultStoreSettings;
@@ -177,6 +178,7 @@ const AppRouter: React.FC<AppRouterProps> = ({
           onNavigate={onNavigate}
           session={session}
           globalDiscountPercentage={currentSettings.global_discount_percentage || 0}
+          paymentOnDeliveryActive={currentSettings.payment_on_delivery_active || false}
         />
       );
     case 'orderconfirmation':

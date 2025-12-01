@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CartItem, ShippingOption } from '../types';
-import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift } from 'lucide-react';
+import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, DollarSign } from 'lucide-react';
 import { supabase } from '../src/integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import MercadoPagoBrick from './MercadoPagoBrick';
@@ -13,9 +13,10 @@ interface CheckoutPageProps {
   onNavigate: (page: string) => void;
   session: Session | null;
   globalDiscountPercentage: number; // Nova prop
+  paymentOnDeliveryActive: boolean; // Nova prop
 }
 
-const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, session, globalDiscountPercentage }) => {
+const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, session, globalDiscountPercentage, paymentOnDeliveryActive }) => {
   const { headerData, isLoading: isHeaderLoading } = usePageHeader('checkout'); // Usando o hook
   
   const [formData, setFormData] = useState({
@@ -36,6 +37,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
   const [error, setError] = useState<string | null>(null);
   const [cashbackBalance, setCashbackBalance] = useState(0);
   const [cashbackToApply, setCashbackToApply] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'mercadopago' | 'cod'>('mercadopago');
 
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
@@ -59,6 +61,13 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       fetchProfile(session.user.id);
     }
   }, [session]);
+  
+  // Se o COD estiver ativo e for a única opção, seleciona COD por padrão
+  useEffect(() => {
+    if (paymentOnDeliveryActive && !selectedShipping) {
+        setSelectedPaymentMethod('cod');
+    }
+  }, [paymentOnDeliveryActive, selectedShipping]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -144,15 +153,82 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
   const appliedCashback = parseFloat(cashbackToApply) || 0;
   const finalTotal = totalBeforeCashback - appliedCashback;
 
-  const handlePaymentSuccess = (paymentId: string, status: string) => {
-    console.log(`Pagamento processado com sucesso. ID: ${paymentId}, Status: ${status}`);
+  const handleOrderSuccess = (orderId: string) => {
+    console.log(`Pedido criado com sucesso. ID: ${orderId}`);
     onNavigate('orderconfirmation');
   };
 
-  const handlePaymentError = (error: any) => {
-    console.error('Erro no pagamento:', error);
-    setError(error.message || 'Ocorreu um erro durante o pagamento. Verifique os dados e tente novamente.');
+  const handleOrderError = (e: any) => {
+    console.error('Erro no pedido:', e);
+    setError(e.message || 'Ocorreu um erro ao finalizar o pedido. Tente novamente.');
     setIsSubmitting(false);
+  };
+
+  // Função auxiliar para criar o pedido no Supabase e enviar o e-mail
+  const createOrderAndNotify = async (status: string) => {
+    const shippingDetails = { ...formData, shippingOption: selectedShipping };
+    
+    const { data: newOrderId, error: rpcError } = await supabase.rpc('create_order', {
+      cart_items: cartItems.map(item => ({...item, price: calculateItemPrice(item)})),
+      shipping_details: shippingDetails,
+      p_shipping_cost: shippingCost,
+      p_total_amount: totalBeforeCashback,
+      p_cashback_to_apply: appliedCashback
+    });
+
+    if (rpcError) throw rpcError;
+
+    // Enviar e-mail de confirmação do pedido via EmailJS
+    try {
+      await emailjs.send(
+        "service_58xpkyb",
+        "template_cmiacto",
+        {
+          to_name: formData.fullName,
+          customer_email: formData.email,
+          order_id: newOrderId,
+          message: JSON.stringify(cartItems.map(item => ({
+              name: item.name,
+              quantity: item.quantity,
+              price: calculateItemPrice(item),
+              variant: item.selectedVariant.color_name || item.selectedVariant.color || item.selectedVariant.size || 'N/A'
+          })), null, 2)
+        },
+        "jOZo1dRNn4uZBaV9T"
+      );
+      console.log("E-mail de confirmação enviado com sucesso!");
+    } catch (emailError: any) {
+      console.error("Falha ao enviar e-mail de confirmação:", emailError);
+    }
+
+    // Registrar a etiqueta de envio (assíncrono)
+    supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
+      .then(({ error: functionError }) => {
+        if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
+      });
+      
+    return newOrderId;
+  };
+
+  const handlePaymentOnDeliverySubmit = async () => {
+    if (!selectedShipping) {
+      setError('Por favor, selecione uma opção de frete antes de finalizar.');
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // 1. Criar o pedido no banco de dados com status 'Processando' (default)
+      await createOrderAndNotify('Processando');
+      
+      // 2. Sucesso
+      handleOrderSuccess('COD'); // Passa um ID fictício para sucesso
+    } catch (e: any) {
+      handleOrderError(e);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePaymentSubmit = async (paymentFormData: any) => {
@@ -164,49 +240,10 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     setError(null);
 
     try {
-      // 1. Criar o pedido no banco de dados
-      const shippingDetails = { ...formData, shippingOption: selectedShipping };
-      const { data: newOrderId, error: rpcError } = await supabase.rpc('create_order', {
-        cart_items: cartItems.map(item => ({...item, price: calculateItemPrice(item)})), // Passa o preço calculado
-        shipping_details: shippingDetails,
-        p_shipping_cost: shippingCost,
-        p_total_amount: totalBeforeCashback,
-        p_cashback_to_apply: appliedCashback
-      });
+      // 1. Criar o pedido no banco de dados (status inicial 'Processando')
+      const newOrderId = await createOrderAndNotify('Processando');
 
-      if (rpcError) throw rpcError;
-
-      // 2. Enviar e-mail de confirmação do pedido via EmailJS
-      try {
-        await emailjs.send(
-          "service_58xpkyb",
-          "template_cmiacto",
-          {
-            to_name: formData.fullName,
-            customer_email: formData.email,
-            order_id: newOrderId,
-            message: JSON.stringify(cartItems.map(item => ({
-                name: item.name,
-                quantity: item.quantity,
-                price: calculateItemPrice(item),
-                variant: item.selectedVariant.color_name || item.selectedVariant.color || item.selectedVariant.size || 'N/A'
-            })), null, 2)
-          },
-          "jOZo1dRNn4uZBaV9T"
-        );
-        console.log("E-mail de confirmação enviado com sucesso!");
-      } catch (emailError: any) {
-        console.error("Falha ao enviar e-mail de confirmação:", emailError);
-        // Não interrompe o fluxo de checkout, apenas loga o erro
-      }
-
-      // 3. Registrar a etiqueta de envio
-      supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
-        .then(({ error: functionError }) => {
-          if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
-        });
-
-      // 4. Processar o pagamento com o ID do pedido
+      // 2. Processar o pagamento com o ID do pedido
       const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
         body: {
           ...paymentFormData,
@@ -217,10 +254,11 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       if (paymentError) throw paymentError;
       if (paymentResult.error) throw new Error(paymentResult.error);
 
-      handlePaymentSuccess(paymentResult.paymentId, paymentResult.status);
+      // 3. Sucesso
+      handleOrderSuccess(newOrderId);
 
     } catch (e: any) {
-      handlePaymentError(e);
+      handleOrderError(e);
     } finally {
       setIsSubmitting(false);
     }
@@ -310,15 +348,52 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2"><Lock size={24} /> 3. Pagamento</h2>
                   {error && <div className="flex items-center gap-2 text-red-700 bg-red-100 p-3 rounded-md mb-4"><AlertCircle size={20} /> {error}</div>}
                   {isSubmitting && <div className="flex justify-center items-center gap-2 text-gray-600 p-4"><Loader2 className="animate-spin" /> Processando seu pedido e pagamento...</div>}
-                  <div style={{ display: isSubmitting ? 'none' : 'block' }}>
-                    <MercadoPagoBrick
-                      amount={finalTotal}
-                      onPaymentSuccess={() => {}} // A lógica agora está no onSubmit
-                      onPaymentError={handlePaymentError}
-                      orderId="" // O ID do pedido será gerado dentro do onSubmit
-                      onSubmit={handlePaymentSubmit}
-                    />
+                  
+                  {/* Payment Method Selector */}
+                  <div className="mb-6 space-y-3">
+                    <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'mercadopago' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
+                        <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'mercadopago'} onChange={() => setSelectedPaymentMethod('mercadopago')} className="hidden" />
+                        <div className="flex items-center gap-3">
+                            <img src="/mercado-pago-logo-2.png" alt="Mercado Pago" className="w-8 h-8 object-contain" />
+                            <p className="font-semibold text-gray-900">Cartão, Pix ou Boleto (Mercado Pago)</p>
+                        </div>
+                    </label>
+                    
+                    {paymentOnDeliveryActive && (
+                        <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'cod' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
+                            <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'cod'} onChange={() => setSelectedPaymentMethod('cod')} className="hidden" />
+                            <div className="flex items-center gap-3">
+                                <DollarSign className="w-8 h-8 text-green-600" />
+                                <p className="font-semibold text-gray-900">Pagamento na Entrega</p>
+                            </div>
+                        </label>
+                    )}
                   </div>
+
+                  {/* Mercado Pago Brick */}
+                  {selectedPaymentMethod === 'mercadopago' && (
+                    <div style={{ display: isSubmitting ? 'none' : 'block' }}>
+                      <MercadoPagoBrick
+                        amount={finalTotal}
+                        onPaymentSuccess={() => {}} // A lógica agora está no onSubmit
+                        onPaymentError={handleOrderError} // Usando handleOrderError para capturar erros do MP
+                        orderId="" // O ID do pedido será gerado dentro do onSubmit
+                        onSubmit={handlePaymentSubmit}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* COD Button */}
+                  {selectedPaymentMethod === 'cod' && (
+                    <button
+                        onClick={handlePaymentOnDeliverySubmit}
+                        disabled={isSubmitting}
+                        className="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-colors disabled:bg-green-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <DollarSign size={20} />}
+                        Finalizar Pedido (Pagar na Entrega)
+                    </button>
+                  )}
                 </div>
               )}
             </div>

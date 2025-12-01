@@ -76,6 +76,7 @@ const SettingsPage = () => {
         logo_height: settings.logo_height, // Salvando a altura
         logo_width: settings.logo_width,   // Salvando a largura
         global_discount_percentage: settings.global_discount_percentage, // NOVO CAMPO
+        payment_on_delivery_active: settings.payment_on_delivery_active, // NOVO CAMPO
         updated_at: new Date().toISOString(),
       })
       .eq('id', 1);
@@ -125,6 +126,21 @@ const SettingsPage = () => {
           <input type="email" name="contact_email" value={settings.contact_email || ''} onChange={handleChange} className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500" />
         </div>
         
+        <h3 className="text-xl font-bold text-gray-900 pt-4 border-t border-gray-200">Configurações de Pagamento</h3>
+        <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <span className="font-medium text-gray-900">Ativar Pagamento na Entrega (COD)</span>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                name="payment_on_delivery_active"
+                checked={settings.payment_on_delivery_active || false}
+                onChange={handleToggleChange}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-red-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+            </label>
+        </div>
+
         <h3 className="text-xl font-bold text-gray-900 pt-4 border-t border-gray-200">Configurações de Cashback</h3>
         <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg border border-gray-200">
             <span className="font-medium text-gray-900">Ativar Sistema de Cashback</span>

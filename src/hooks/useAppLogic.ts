@@ -13,6 +13,7 @@ const defaultStoreSettings: StoreSettings = {
   logo_height: 40,
   logo_width: 150,
   global_discount_percentage: 0.00,
+  payment_on_delivery_active: false, // NOVO DEFAULT
 };
 
 // Utility functions for localStorage
