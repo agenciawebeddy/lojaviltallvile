@@ -95,7 +95,7 @@ const ContactForm: React.FC = () => {
           <input
             type="email"
             id="email"
-            name="mail" // ALTERADO: Corresponde a {{mail}}
+            name="mail" // Corresponde a {{mail}}
             value={formData.email}
             onChange={handleChange}
             className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500"
@@ -107,7 +107,7 @@ const ContactForm: React.FC = () => {
           <input
             type="tel"
             id="phone"
-            name="phone" // Este campo não tem correspondência no seu template atual
+            name="phone" // AGORA CORRESPONDE A {{phone}}
             value={formData.phone}
             onChange={handleChange}
             className="w-full bg-white border border-gray-300 rounded-md text-gray-900 p-2 focus:ring-red-500 focus:border-red-500"
