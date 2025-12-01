@@ -2,6 +2,7 @@ import React from 'react';
 import PageHeader from './PageHeader';
 import usePageHeader from '../hooks/usePageHeader';
 import { Loader2, Phone, Mail, MapPin } from 'lucide-react';
+import ContactForm from './ContactForm'; // Importando o novo componente
 
 const ContactPage: React.FC = () => {
   const { headerData, isLoading } = usePageHeader('contato');
@@ -46,11 +47,8 @@ const ContactPage: React.FC = () => {
               </div>
             </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Horário de Atendimento</h2>
-            <p className="text-gray-600">Segunda a Sexta: 9h às 19h</p>
-            <p className="text-gray-600">Sábado: 9h às 13h</p>
-          </div>
+          {/* Formulário de Contato */}
+          <ContactForm />
         </div>
       </div>
     </div>
