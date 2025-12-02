@@ -296,7 +296,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       ];
       
       // Adicionar validações específicas para Cartão
-      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
+      if (finalPaymentMethodId) {
           requiredFields.push(
               { value: token, name: 'token' },
               { value: installments, name: 'installments' },
