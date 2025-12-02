@@ -256,56 +256,125 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   };
   
-  const handlePaymentSubmit = async (paymentFormData: any) => {
-    if (!selectedShipping) {
-      setError('Por favor, selecione uma opção de frete antes de pagar.');
-      return;
-    }
-    setIsSubmitting(true);
-    setError(null);
+ const handlePaymentSubmit = async (paymentFormData: any) => {
+  if (!selectedShipping) {
+    setError('Por favor, selecione uma opção de frete antes de pagar.');
+    return;
+  }
+  setIsSubmitting(true);
+  setError(null);
 
-    try {
-      // 1. Criar o pedido no banco de dados (status inicial 'Processando')
-      const newOrderId = await createOrderAndNotify('Processando');
-      
-      const amount = finalTotal;
-      const email = formData.email;
-      const docNumber = formData.document;
-      
-      // --- CORREÇÃO AQUI: Extraindo paymentMethodId corretamente ---
-      const { 
-        token, 
-        paymentMethodId, // O Brick deve fornecer este campo
-        issuer, 
-        installments, 
-      } = paymentFormData;
-      
-      // Se o paymentMethodId não vier diretamente, tentamos extrair de outras formas
-      const finalPaymentMethodId = paymentMethodId || paymentFormData.payment_method_id;
-      
-      // Determinar o tipo de identificação
-      const identificationType = docNumber ? (docNumber.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF') : undefined;
+  try {
+    // 1. Criar o pedido
+    const newOrderId = await createOrderAndNotify('Processando');
 
-      // 2. Validação de Campos Essenciais
-      const requiredFields = [
-        { value: amount, name: 'transaction_amount' },
-        { value: finalPaymentMethodId, name: 'payment_method_id' }, // Usando o valor corrigido
-        { value: email, name: 'payer.email' },
-        { value: identificationType, name: 'payer.identification.type' },
-        { value: docNumber, name: 'payer.identification.number' }
-      ];
-      
-      // Validação específica para cartão de crédito
-if (finalPaymentMethodId && 
-    finalPaymentMethodId !== 'pix' && 
-    finalPaymentMethodId !== 'bolbradesco' &&
-    finalPaymentMethodId !== 'pec') {
+    const amount = finalTotal;
+    const email = formData.email;
+    const docNumber = formData.document;
 
-    requiredFields.push(
+    // --------------------------------------------------------
+    // ✓ Correção: MERCADO PAGO ENTREGA ASSIM:
+    // payment_method_id
+    // issuer_id
+    // token
+    // installments
+    // payer.email
+    // payer.identification.number
+    // --------------------------------------------------------
+    const finalPaymentMethodId =
+      paymentFormData.payment_method_id || null;
+
+    const token = paymentFormData.token || null;
+    const issuer = paymentFormData.issuer_id || null;
+    const installments = paymentFormData.installments || null;
+
+    // Determinar tipo de documento
+    const identificationType =
+      docNumber?.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF';
+
+    // --------------------------------------------------------
+    // 2. Validação dos campos
+    // --------------------------------------------------------
+    const requiredFields = [
+      { value: amount, name: 'transaction_amount' },
+      { value: finalPaymentMethodId, name: 'payment_method_id' },
+      { value: email, name: 'payer.email' },
+      { value: identificationType, name: 'payer.identification.type' },
+      { value: docNumber, name: 'payer.identification.number' }
+    ];
+
+    // Validação para cartão de crédito
+    if (finalPaymentMethodId === 'visa' ||
+        finalPaymentMethodId === 'master' ||
+        finalPaymentMethodId === 'elo' ||
+        finalPaymentMethodId === 'amex' ||
+        finalPaymentMethodId === 'hipercard') {
+
+      requiredFields.push(
         { value: token, name: 'token' },
         { value: installments, name: 'installments' },
         { value: issuer, name: 'issuer_id' }
+      );
+    }
+
+    // Verificar ausência de campos
+    for (const field of requiredFields) {
+      if (!field.value) {
+        throw new Error(
+          `Dados incompletos para processar o pagamento. Campo faltando: ${field.name}`
+        );
+      }
+    }
+
+    // --------------------------------------------------------
+    // 3. Enviar para sua Supabase Function
+    // --------------------------------------------------------
+    const payload = {
+      transaction_amount: amount,
+      payment_method_id: finalPaymentMethodId,
+      token,
+      installments,
+      issuer_id: issuer,
+      payer: {
+        email,
+        identification: {
+          type: identificationType,
+          number: docNumber
+        }
+      },
+      external_reference: newOrderId
+    };
+
+    console.log("➡ Enviando payload:", payload);
+
+    const response = await fetch(
+      "/functions/v1/process-payment",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
     );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Erro ao processar pagamento.");
+    }
+
+    // Sucesso
+    await sendOrderConfirmationEmail(email, cartItems, amount, newOrderId);
+    clearCart();
+    navigate(`/order-success/${newOrderId}`);
+
+  } catch (error: any) {
+    console.error("❌ Erro no pedido:", error);
+    handleOrderError(error);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
 
     // Se o token não existir, erro de cartão
     if (!token) {
