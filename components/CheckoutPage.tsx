@@ -295,19 +295,23 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
         { value: docNumber, name: 'payer.identification.number' }
       ];
       
-      // Adicionar validações específicas para Cartão
-      if (finalPaymentMethodId) {
-          requiredFields.push(
-              { value: token, name: 'token' },
-              { value: installments, name: 'installments' },
-              { value: issuer, name: 'issuer_id' }
-          );
-          
-          // Se o token estiver ausente para cartão, lançar erro específico
-          if (!token) {
-              throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
-          }
-      }
+      // Validação específica para cartão de crédito
+if (finalPaymentMethodId && 
+    finalPaymentMethodId !== 'pix' && 
+    finalPaymentMethodId !== 'bolbradesco' &&
+    finalPaymentMethodId !== 'pec') {
+
+    requiredFields.push(
+        { value: token, name: 'token' },
+        { value: installments, name: 'installments' },
+        { value: issuer, name: 'issuer_id' }
+    );
+
+    // Se o token não existir, erro de cartão
+    if (!token) {
+        throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
+    }
+}
 
       const missingField = requiredFields.find(field => !field.value);
       if (missingField) {
