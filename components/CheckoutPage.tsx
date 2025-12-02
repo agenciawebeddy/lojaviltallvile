@@ -256,131 +256,58 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   };
   
- const handlePaymentSubmit = async (paymentFormData: any) => {
-  if (!selectedShipping) {
-    setError('Por favor, selecione uma opção de frete antes de pagar.');
-    return;
-  }
-  setIsSubmitting(true);
-  setError(null);
-
-  try {
-    // 1. Criar o pedido
-    const newOrderId = await createOrderAndNotify('Processando');
-
-    const amount = finalTotal;
-    const email = formData.email;
-    const docNumber = formData.document;
-
-    // --------------------------------------------------------
-    // ✓ Correção: MERCADO PAGO ENTREGA ASSIM:
-    // payment_method_id
-    // issuer_id
-    // token
-    // installments
-    // payer.email
-    // payer.identification.number
-    // --------------------------------------------------------
-    const finalPaymentMethodId =
-      paymentFormData.payment_method_id || null;
-
-    const token = paymentFormData.token || null;
-    const issuer = paymentFormData.issuer_id || null;
-    const installments = paymentFormData.installments || null;
-
-    // Determinar tipo de documento
-    const identificationType =
-      docNumber?.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF';
-
-    // --------------------------------------------------------
-    // 2. Validação dos campos
-    // --------------------------------------------------------
-    const requiredFields = [
-      { value: amount, name: 'transaction_amount' },
-      { value: finalPaymentMethodId, name: 'payment_method_id' },
-      { value: email, name: 'payer.email' },
-      { value: identificationType, name: 'payer.identification.type' },
-      { value: docNumber, name: 'payer.identification.number' }
-    ];
-
-    // Validação para cartão de crédito
-    if (finalPaymentMethodId === 'visa' ||
-        finalPaymentMethodId === 'master' ||
-        finalPaymentMethodId === 'elo' ||
-        finalPaymentMethodId === 'amex' ||
-        finalPaymentMethodId === 'hipercard') {
-
-      requiredFields.push(
-        { value: token, name: 'token' },
-        { value: installments, name: 'installments' },
-        { value: issuer, name: 'issuer_id' }
-      );
+  const handlePaymentSubmit = async (paymentFormData: any) => {
+    if (!selectedShipping) {
+      setError('Por favor, selecione uma opção de frete antes de pagar.');
+      return;
     }
+    setIsSubmitting(true);
+    setError(null);
 
-    // Verificar ausência de campos
-    for (const field of requiredFields) {
-      if (!field.value) {
-        throw new Error(
-          `Dados incompletos para processar o pagamento. Campo faltando: ${field.name}`
-        );
+    try {
+      // 1. Criar o pedido no banco de dados (status inicial 'Processando')
+      const newOrderId = await createOrderAndNotify('Processando');
+      
+      const amount = finalTotal;
+      const email = formData.email;
+      const docNumber = formData.document;
+      
+      // --- CORREÇÃO AQUI: Extraindo dados do Brick ---
+      const { 
+        token, 
+        paymentMethodId, 
+        issuerId: issuer, // O Brick usa issuerId
+        installments, 
+      } = paymentFormData;
+      
+      // O Brick pode retornar paymentMethodId ou payment_method_id
+      const finalPaymentMethodId = paymentMethodId || paymentFormData.payment_method_id;
+      
+      // Determinar o tipo de identificação
+      const identificationType = docNumber ? (docNumber.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF') : undefined;
+
+      // 2. Validação de Campos Essenciais
+      const requiredFields = [
+        { value: amount, name: 'transaction_amount' },
+        { value: finalPaymentMethodId, name: 'payment_method_id' }, 
+        { value: email, name: 'payer.email' },
+        { value: identificationType, name: 'payer.identification.type' },
+        { value: docNumber, name: 'payer.identification.number' }
+      ];
+      
+      // Adicionar validações específicas para Cartão
+      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
+          requiredFields.push(
+              { value: token, name: 'token' },
+              { value: installments, name: 'installments' },
+              { value: issuer, name: 'issuer_id' }
+          );
+          
+          // Se o token estiver ausente para cartão, lançar erro específico
+          if (!token) {
+              throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
+          }
       }
-    }
-
-    // --------------------------------------------------------
-    // 3. Enviar para sua Supabase Function
-    // --------------------------------------------------------
-    const payload = {
-      transaction_amount: amount,
-      payment_method_id: finalPaymentMethodId,
-      token,
-      installments,
-      issuer_id: issuer,
-      payer: {
-        email,
-        identification: {
-          type: identificationType,
-          number: docNumber
-        }
-      },
-      external_reference: newOrderId
-    };
-
-    console.log("➡ Enviando payload:", payload);
-
-    const response = await fetch(
-      "/functions/v1/process-payment",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || "Erro ao processar pagamento.");
-    }
-
-    // Sucesso
-    await sendOrderConfirmationEmail(email, cartItems, amount, newOrderId);
-    clearCart();
-    navigate(`/order-success/${newOrderId}`);
-
-  } catch (error: any) {
-    console.error("❌ Erro no pedido:", error);
-    handleOrderError(error);
-  } finally {
-    setIsSubmitting(false);
-  }
-};
-
-
-    // Se o token não existir, erro de cartão
-    if (!token) {
-        throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
-    }
-}
 
       const missingField = requiredFields.find(field => !field.value);
       if (missingField) {
@@ -390,7 +317,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // 3. Montar o Payload para a Edge Function (Formato estrito do MP)
       const payloadToEdgeFunction: any = {
         transaction_amount: amount,
-        payment_method_id: finalPaymentMethodId, // Usando o valor corrigido
+        payment_method_id: finalPaymentMethodId, 
         external_reference: newOrderId,
         payer: {
           email: email,
