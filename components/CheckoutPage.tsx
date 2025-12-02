@@ -214,11 +214,11 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // Não interrompe o fluxo de checkout, apenas loga o erro
     }
 
-    // Registrar a etiqueta de envio (assíncrono)
-    supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
-      .then(({ error: functionError }) => {
-        if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
-      });
+    // IGNORANDO MELHOR ENVIO CONFORME SOLICITADO
+    // supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
+    //   .then(({ error: functionError }) => {
+    //     if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
+    //   });
       
     return newOrderId;
   };
@@ -244,38 +244,8 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   };
   
-  // Função para validar o token do cartão via API do Mercado Pago
-  const validateCardToken = async (token: string): Promise<boolean> => {
-    if (!token) return false;
-
-    // Nota: Esta chamada usa a chave pública, mas pode ser bloqueada por CORS ou exigir autenticação
-    // dependendo da configuração da conta MP. O método mais seguro é confiar na geração do SDK.
-    const url = `https://api.mercadopago.com/v1/card_tokens/${token}?public_key=${MERCADO_PAGO_PUBLIC_KEY}`;
-
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        const data = await response.json();
-        
-        console.log("Retorno da API de validação de token:", data);
-
-        // Verifica se a resposta é OK e se o token está ativo
-        if (response.ok && data.id === token && data.status === 'active') {
-            return true;
-        }
-        
-        return false;
-
-    } catch (e) {
-        console.error("Erro na chamada de validação de token:", e);
-        return false;
-    }
-  };
+  // Removendo validateCardToken, pois a validação será feita na Edge Function
+  // e o Brick deve fornecer o token diretamente.
 
   const handlePaymentSubmit = async (paymentFormData: any) => {
     if (!selectedShipping) {
@@ -289,110 +259,58 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // 1. Criar o pedido no banco de dados (status inicial 'Processando')
       const newOrderId = await createOrderAndNotify('Processando');
       
-      // --- Lógica de Tokenização e Validação ---
+      const amount = finalTotal;
+      const email = formData.email;
+      const docNumber = formData.document;
       
-      const mp = (window as any).MercadoPago;
-      if (!mp) throw new Error("SDK do Mercado Pago não carregado.");
-
+      // Dados retornados pelo Brick (paymentFormData)
       const { 
+        token, 
         paymentMethodId, 
         issuer, 
         installments, 
-        cardholderName, 
         identificationType: docType, 
-        identificationNumber: docNumber, 
-        cardExpirationMonth, 
-        cardExpirationYear, 
-        cardNumber, 
-        securityCode 
       } = paymentFormData;
       
-      const amount = finalTotal;
-      const email = formData.email;
-
-      let token: string | null = null;
-      
-      // Apenas tenta gerar o token se for pagamento com cartão (paymentMethodId não é pix/boleto)
-      if (paymentMethodId && !['pix', 'bolbradesco'].includes(paymentMethodId)) {
-        
-        console.log("Tentando gerar token do cartão...");
-        
-        const cardToken = await mp.cardToken.create({
-          cardholderName,
-          cardExpirationMonth,
-          cardExpirationYear,
-          cardNumber,
-          securityCode,
-          identificationType: docType,
-          identificationNumber: docNumber,
-        });
-        
-        console.log("Retorno bruto do Mercado Pago (Tokenização):", cardToken);
-
-        if (!cardToken.id) {
-          throw new Error("Falha ao gerar o token do cartão. Verifique os dados do cartão.");
-        }
-        
-        // 2. Validação do Token gerado (via API GET)
-        const isValid = await validateCardToken(cardToken.id);
-        if (!isValid) {
-            throw new Error("O token do cartão gerado é inválido ou expirou. Por favor, verifique os dados e tente novamente.");
-        }
-        
-        token = cardToken.id;
-        
-      } else {
-          // Para PIX/Boleto, o token é fornecido pelo Brick
-          token = paymentFormData.token;
-      }
-      
-      // 3. Validação de Campos Essenciais
+      // 2. Validação de Campos Essenciais
       const requiredFields = [
         { value: amount, name: 'transaction_amount' },
         { value: paymentMethodId, name: 'payment_method_id' },
         { value: installments, name: 'installments' },
         { value: token, name: 'token' },
+        { value: email, name: 'payer.email' },
+        { value: docType, name: 'payer.identification.type' },
+        { value: docNumber, name: 'payer.identification.number' }
       ];
       
-      // Adiciona validação de Payer apenas se for Pix/Boleto (onde o Brick não gera token)
-      if (['pix', 'bolbradesco'].includes(paymentMethodId)) {
-          requiredFields.push(
-              { value: email, name: 'payer.email' },
-              { value: docType, name: 'payer.identification.type' },
-              { value: docNumber, name: 'payer.identification.number' }
-          );
-      }
-
+      // issuer_id é opcional para alguns métodos, mas o Brick deve fornecê-lo para cartões.
+      // Se for PIX/Boleto, issuer_id pode ser nulo/undefined.
+      
       const missingField = requiredFields.find(field => !field.value);
       if (missingField) {
         throw new Error(`Dados incompletos para processar o pagamento. Campo faltando: ${missingField.name}`);
       }
 
-      // 4. Montar o Payload para a Edge Function
+      // 3. Montar o Payload para a Edge Function (Formato estrito do MP)
       const payloadToEdgeFunction: any = {
-        token: token,
         transaction_amount: amount,
+        token: token,
+        installments: installments,
         payment_method_id: paymentMethodId,
-        installments,
-        issuer_id: issuer,
+        issuer_id: issuer, // Pode ser undefined/null, a Edge Function irá filtrar
         external_reference: newOrderId,
+        payer: {
+          email: email,
+          identification: {
+            type: docType || 'CPF', // Garantindo um tipo padrão se ausente
+            number: docNumber
+          }
+        }
       };
       
-      // Adiciona Payer apenas se for Pix/Boleto ou se o Brick forneceu explicitamente (para cartões)
-      if (['pix', 'bolbradesco'].includes(paymentMethodId) || paymentFormData.payer) {
-          payloadToEdgeFunction.payer = {
-            email: email,
-            identification: {
-              type: docType,
-              number: docNumber
-            }
-          };
-      }
-      
-      console.log("Token gerado:", token);
       console.log("Payload enviado para a Edge Function:", payloadToEdgeFunction);
 
-      // 5. Chamar a Edge Function
+      // 4. Chamar a Edge Function
       const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
         body: payloadToEdgeFunction
       });
@@ -409,7 +327,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       
       console.log("Retorno final da Edge Function:", paymentResult);
 
-      // 6. Sucesso
+      // 5. Sucesso
       handleOrderSuccess(newOrderId);
 
     } catch (e: any) {

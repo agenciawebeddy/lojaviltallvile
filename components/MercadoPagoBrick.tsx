@@ -20,6 +20,7 @@ const MercadoPagoBrick: React.FC<MercadoPagoBrickProps> = ({ amount, onPaymentEr
     amount: amount,
   };
 
+  // Customização simplificada para evitar erros de propriedades inválidas
   const customization = {
     paymentMethods: {
       creditCard: 'all',
@@ -29,18 +30,7 @@ const MercadoPagoBrick: React.FC<MercadoPagoBrickProps> = ({ amount, onPaymentEr
     },
     visual: {
       style: {
-        theme: 'default', // Alterado para o tema claro
-        customVariables: {
-          baseColor: '#374151', // gray-700 para textos
-          backgroundColor: '#f9fafb', // gray-50 para o fundo
-          formBackgroundColor: '#ffffff', // white para o fundo do formulário
-          inputBackgroundColor: '#ffffff', // white para inputs
-          borderRadius: '0.5rem',
-          fontSizeMedium: '1rem',
-          // Adicionando cores para combinar com o tema da loja
-          primaryColor: '#ef4444', // red-500
-          secondaryColor: '#f87171', // red-400
-        }
+        theme: 'default',
       }
     }
   } as const;
