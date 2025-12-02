@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CartItem, ShippingOption } from '../types';
-import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, DollarSign } from 'lucide-react';
+import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, CreditCard } from 'lucide-react';
 import { supabase } from '../src/integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import PageHeader from '../src/components/PageHeader';
@@ -18,6 +18,9 @@ interface CheckoutPageProps {
 const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, session, globalDiscountPercentage, paymentOnDeliveryActive }) => {
   const { headerData, isLoading: isHeaderLoading } = usePageHeader('checkout');
   
+  const SUCCESS_URL = import.meta.env.VITE_URL_SUCESSO || `${window.location.origin}/?payment_status=success`;
+  const CANCEL_URL = import.meta.env.VITE_URL_CANCELAMENTO || `${window.location.origin}/?payment_status=failure`;
+
   if (cartItems.length === 0) {
     useEffect(() => {
       onNavigate('cart');
@@ -44,7 +47,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
   const [error, setError] = useState<string | null>(null);
   const [cashbackBalance, setCashbackBalance] = useState(0);
   const [cashbackToApply, setCashbackToApply] = useState('');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'cod' | 'manual'>('manual'); // 'manual' substitui 'mercadopago'
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'stripe' | 'cod'>('stripe');
 
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
@@ -69,12 +72,11 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   }, [session]);
   
-  // Define o método de pagamento padrão
   useEffect(() => {
     if (paymentOnDeliveryActive) {
         setSelectedPaymentMethod('cod');
     } else {
-        setSelectedPaymentMethod('manual');
+        setSelectedPaymentMethod('stripe');
     }
   }, [paymentOnDeliveryActive]);
 
@@ -218,7 +220,70 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     return newOrderId;
   };
 
-  const handleFinalizeOrder = async () => {
+  const handleStripePayment = async () => {
+    if (!selectedShipping) {
+      setError('Por favor, selecione uma opção de frete antes de pagar.');
+      return;
+    }
+    
+    // Validação básica dos campos de endereço
+    const requiredFields = ['fullName', 'email', 'document', 'postalCode', 'street', 'number', 'neighborhood', 'city', 'state'];
+    const missingField = requiredFields.find(field => !formData[field as keyof typeof formData]);
+    
+    if (missingField) {
+        setError(`Por favor, preencha o campo obrigatório: ${missingField}.`);
+        return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // 1. Criar o pedido no banco de dados com status 'Processando' (default)
+      // O webhook do Stripe irá atualizar para 'Pago'
+      const newOrderId = await createOrderAndNotify('Processando');
+      
+      // 2. Preparar dados para a Edge Function do Stripe
+      const stripeItems = cartItems.map(item => ({
+        name: item.name,
+        price: calculateItemPrice(item),
+        quantity: item.quantity,
+        imageUrl: item.imageUrl,
+        variantDescription: [item.selectedVariant.color_name, item.selectedVariant.size].filter(Boolean).join(' / '),
+      }));
+
+      const { data: sessionData, error: invokeError } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          items: stripeItems,
+          customerEmail: formData.email,
+          shippingCost: shippingCost,
+          orderId: newOrderId,
+          userId: session?.user?.id,
+          successUrl: SUCCESS_URL,
+          cancelUrl: CANCEL_URL,
+        },
+      });
+
+      if (invokeError) {
+        throw new Error(`Erro ao criar sessão de checkout: ${invokeError.message}`);
+      }
+      
+      if (sessionData.error) {
+        throw new Error(sessionData.error);
+      }
+
+      // 3. Redirecionar para o Stripe
+      window.location.href = sessionData.url;
+
+    } catch (e: any) {
+      handleOrderError(e);
+    } finally {
+      // Não definimos isSubmitting como false aqui, pois o usuário será redirecionado
+      // Apenas em caso de erro antes do redirecionamento, ele será reativado.
+    }
+  };
+  
+  const handlePaymentOnDeliverySubmit = async () => {
     if (!selectedShipping) {
       setError('Por favor, selecione uma opção de frete antes de finalizar.');
       return;
@@ -241,14 +306,14 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       await createOrderAndNotify('Processando');
       
       // 2. Sucesso
-      handleOrderSuccess('MANUAL_PAYMENT'); 
+      handleOrderSuccess('COD'); 
     } catch (e: any) {
       handleOrderError(e);
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   const formatPrice = (price: number) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   if (isHeaderLoading) {
@@ -259,7 +324,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     <>
       <PageHeader 
         title={headerData?.title || "Finalizar Compra"}
-        description={headerData?.description || "Preencha seus dados, escolha o frete e finalize o pedido."}
+        description={headerData?.description || "Preencha seus dados, escolha o frete e finalize o pagamento."}
         imageUrl={headerData?.image_url}
       />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -332,10 +397,18 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
                 <div className="bg-white p-6 rounded-lg border border-gray-200">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2"><Lock size={24} /> 3. Pagamento</h2>
                   {error && <div className="flex items-center gap-2 text-red-700 bg-red-100 p-3 rounded-md mb-4"><AlertCircle size={20} /> {error}</div>}
-                  {isSubmitting && <div className="flex justify-center items-center gap-2 text-gray-600 p-4"><Loader2 className="animate-spin" /> Processando seu pedido...</div>}
+                  {isSubmitting && <div className="flex justify-center items-center gap-2 text-gray-600 p-4"><Loader2 className="animate-spin" /> Processando pagamento...</div>}
                   
                   {/* Payment Method Selector */}
                   <div className="mb-6 space-y-3">
+                    <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'stripe' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
+                        <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'stripe'} onChange={() => setSelectedPaymentMethod('stripe')} className="hidden" />
+                        <div className="flex items-center gap-3">
+                            <CreditCard className="w-8 h-8 text-indigo-600" />
+                            <p className="font-semibold text-gray-900">Cartão de Crédito/Débito (Stripe)</p>
+                        </div>
+                    </label>
+                    
                     {paymentOnDeliveryActive && (
                         <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'cod' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
                             <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'cod'} onChange={() => setSelectedPaymentMethod('cod')} className="hidden" />
@@ -345,27 +418,37 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
                             </div>
                         </label>
                     )}
-                    <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'manual' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
-                        <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'manual'} onChange={() => setSelectedPaymentMethod('manual')} className="hidden" />
-                        <div className="flex items-center gap-3">
-                            <FileText className="w-8 h-8 text-blue-600" />
-                            <p className="font-semibold text-gray-900">Pagamento Manual (Transferência/PIX)</p>
-                        </div>
-                    </label>
                   </div>
 
-                  {/* Finalize Button */}
-                  <button
-                      onClick={handleFinalizeOrder}
-                      disabled={isSubmitting}
-                      className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                      {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Lock size={20} />}
-                      Finalizar Pedido
-                  </button>
+                  {/* Stripe Button */}
+                  {selectedPaymentMethod === 'stripe' && (
+                    <button
+                        onClick={handleStripePayment}
+                        disabled={isSubmitting}
+                        className="w-full bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-indigo-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CreditCard size={20} />}
+                        Pagar com Stripe ({formatPrice(finalTotal)})
+                    </button>
+                  )}
+                  
+                  {/* COD Button */}
+                  {selectedPaymentMethod === 'cod' && (
+                    <button
+                        onClick={handlePaymentOnDeliverySubmit}
+                        disabled={isSubmitting}
+                        className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Lock size={20} />}
+                        Finalizar Pedido (Pagar na Entrega)
+                    </button>
+                  )}
                   
                   <p className="text-xs text-gray-500 mt-3 text-center">
-                    Ao finalizar, seu pedido será criado com status "Processando". Você receberá instruções de pagamento por e-mail.
+                    {selectedPaymentMethod === 'stripe' 
+                        ? 'Você será redirecionado para a página de pagamento seguro do Stripe.'
+                        : 'Seu pedido será criado com status "Processando".'
+                    }
                   </p>
                 </div>
               )}
