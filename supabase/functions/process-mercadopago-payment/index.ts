@@ -24,22 +24,29 @@ serve(async (req) => {
       throw new Error('O token de acesso do Mercado Pago não está configurado.');
     }
 
-    const paymentPayload = {
+    // 1. Construção do payload base
+    const paymentPayload: any = {
       transaction_amount: paymentData.transaction_amount,
       token: paymentData.token,
       description: `Pedido #${paymentData.external_reference.substring(0, 8)}`,
       installments: paymentData.installments,
       payment_method_id: paymentData.payment_method_id,
       issuer_id: paymentData.issuer_id,
-      payer: {
-        email: paymentData.payer.email,
-        identification: {
-          type: paymentData.payer.identification.type,
-          number: paymentData.payer.identification.number,
-        },
-      },
       external_reference: paymentData.external_reference,
     };
+
+    // 2. Adicionar 'payer' dinamicamente se existir
+    if (paymentData.payer) {
+      paymentPayload.payer = {
+        email: paymentData.payer.email,
+        identification: paymentData.payer.identification
+      };
+    }
+    
+    // 3. Filtrar campos undefined (garantindo que apenas dados válidos sejam enviados)
+    const cleanPayload = Object.fromEntries(
+        Object.entries(paymentPayload).filter(([_, v]) => v !== undefined && v !== null)
+    );
 
     const response = await fetch("https://api.mercadopago.com/v1/payments", {
       method: 'POST',
@@ -48,7 +55,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${accessToken}`,
         'X-Idempotency-Key': crypto.randomUUID(), // Previne pagamentos duplicados
       },
-      body: JSON.stringify(paymentPayload),
+      body: JSON.stringify(cleanPayload),
     });
 
     const responseData = await response.json();
