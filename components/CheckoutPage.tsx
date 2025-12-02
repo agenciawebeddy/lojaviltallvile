@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CartItem, ShippingOption } from '../types';
-import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, CreditCard } from 'lucide-react';
+import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, CreditCard, DollarSign } from 'lucide-react';
 import { supabase } from '../src/integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import PageHeader from '../src/components/PageHeader';
