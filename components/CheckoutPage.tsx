@@ -243,6 +243,39 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       setIsSubmitting(false);
     }
   };
+  
+  // Função para validar o token do cartão via API do Mercado Pago
+  const validateCardToken = async (token: string): Promise<boolean> => {
+    if (!token) return false;
+
+    // Nota: Esta chamada usa a chave pública, mas pode ser bloqueada por CORS ou exigir autenticação
+    // dependendo da configuração da conta MP. O método mais seguro é confiar na geração do SDK.
+    const url = `https://api.mercadopago.com/v1/card_tokens/${token}?public_key=${MERCADO_PAGO_PUBLIC_KEY}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        const data = await response.json();
+        
+        console.log("Retorno da API de validação de token:", data);
+
+        // Verifica se a resposta é OK e se o token está ativo
+        if (response.ok && data.id === token && data.status === 'active') {
+            return true;
+        }
+        
+        return false;
+
+    } catch (e) {
+        console.error("Erro na chamada de validação de token:", e);
+        return false;
+    }
+  };
 
   const handlePaymentSubmit = async (paymentFormData: any) => {
     if (!selectedShipping) {
@@ -277,14 +310,14 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       const amount = finalTotal;
       const email = formData.email;
 
-      let cardToken = { id: null, rawResponse: null };
+      let token: string | null = null;
       
       // Apenas tenta gerar o token se for pagamento com cartão (paymentMethodId não é pix/boleto)
       if (paymentMethodId && !['pix', 'bolbradesco'].includes(paymentMethodId)) {
         
         console.log("Tentando gerar token do cartão...");
         
-        cardToken = await mp.cardToken.create({
+        const cardToken = await mp.cardToken.create({
           cardholderName,
           cardExpirationMonth,
           cardExpirationYear,
@@ -299,11 +332,21 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
         if (!cardToken.id) {
           throw new Error("Falha ao gerar o token do cartão. Verifique os dados do cartão.");
         }
+        
+        // 2. Validação do Token gerado (via API GET)
+        const isValid = await validateCardToken(cardToken.id);
+        if (!isValid) {
+            throw new Error("O token do cartão gerado é inválido ou expirou. Por favor, verifique os dados e tente novamente.");
+        }
+        
+        token = cardToken.id;
+        
+      } else {
+          // Para PIX/Boleto, o token é fornecido pelo Brick
+          token = paymentFormData.token;
       }
       
-      const token = cardToken.id || paymentFormData.token; // Usa o token gerado ou o token do Brick (para Pix/Boleto)
-
-      // 2. Validação de Campos Essenciais
+      // 3. Validação de Campos Essenciais
       const requiredFields = [
         { value: amount, name: 'transaction_amount' },
         { value: paymentMethodId, name: 'payment_method_id' },
@@ -325,7 +368,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
         throw new Error(`Dados incompletos para processar o pagamento. Campo faltando: ${missingField.name}`);
       }
 
-      // 3. Montar o Payload para a Edge Function
+      // 4. Montar o Payload para a Edge Function
       const payloadToEdgeFunction: any = {
         token: token,
         transaction_amount: amount,
@@ -349,7 +392,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       console.log("Token gerado:", token);
       console.log("Payload enviado para a Edge Function:", payloadToEdgeFunction);
 
-      // 4. Chamar a Edge Function
+      // 5. Chamar a Edge Function
       const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
         body: payloadToEdgeFunction
       });
@@ -366,7 +409,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       
       console.log("Retorno final da Edge Function:", paymentResult);
 
-      // 5. Sucesso
+      // 6. Sucesso
       handleOrderSuccess(newOrderId);
 
     } catch (e: any) {
