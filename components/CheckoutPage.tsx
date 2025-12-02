@@ -24,6 +24,18 @@ interface CheckoutPageProps {
 const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, session, globalDiscountPercentage, paymentOnDeliveryActive }) => {
   const { headerData, isLoading: isHeaderLoading } = usePageHeader('checkout'); // Usando o hook
   
+  // --- START: Empty Cart Check ---
+  if (cartItems.length === 0) {
+    // Redireciona se o carrinho estiver vazio
+    useEffect(() => {
+      onNavigate('cart');
+    }, [onNavigate]);
+    
+    // Renderiza um estado de carregamento brevemente
+    return <div className="flex justify-center items-center p-8 h-screen"><Loader2 className="animate-spin" size={32} /></div>;
+  }
+  // --- END: Empty Cart Check ---
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',

@@ -52,7 +52,7 @@ export const useAppLogic = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>(loadState('cartItems') || []);
   const [wishlistItems, setWishlistItems] = useState<Product[]>(loadState('wishlistItems') || []);
 
-  const [currentPage, setCurrentPage] = useState('home');
+  const [currentPage, setCurrentPage] = useState(loadState('currentPage') || 'home');
   const [initialShopCategory, setInitialShopCategory] = useState<string | undefined>(undefined);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [postLoginRedirect, setPostLoginRedirect] = useState<string | null>(null);
@@ -70,6 +70,11 @@ export const useAppLogic = () => {
   useEffect(() => {
     saveState('wishlistItems', wishlistItems);
   }, [wishlistItems]);
+  
+  // Persist currentPage to localStorage
+  useEffect(() => {
+    saveState('currentPage', currentPage);
+  }, [currentPage]);
 
   // Supabase Auth Listener
   useEffect(() => {
