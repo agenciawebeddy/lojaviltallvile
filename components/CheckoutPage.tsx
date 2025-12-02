@@ -3,38 +3,28 @@ import { CartItem, ShippingOption } from '../types';
 import { Lock, User, Home, MapPin, Mail, Truck, Loader2, AlertCircle, FileText, Hash, Gift, DollarSign } from 'lucide-react';
 import { supabase } from '../src/integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
-import MercadoPagoBrick from './MercadoPagoBrick';
 import PageHeader from '../src/components/PageHeader';
-import usePageHeader from '../src/hooks/usePageHeader'; // Importando o hook
-import emailjs from "@emailjs/browser"; // Importando a biblioteca EmailJS
-import { initMercadoPago } from '@mercadopago/sdk-react'; // Importando initMercadoPago para acesso ao SDK
-
-// Inicializa o Mercado Pago para acesso ao SDK (a chave pública já está no MercadoPagoBrick, mas precisamos do SDK aqui)
-const MERCADO_PAGO_PUBLIC_KEY = 'APP_USR-20aecbec-5586-45ad-aa8d-eed850bc6e08'; 
-initMercadoPago(MERCADO_PAGO_PUBLIC_KEY, { locale: 'pt-BR' });
+import usePageHeader from '../src/hooks/usePageHeader';
+import emailjs from "@emailjs/browser";
 
 interface CheckoutPageProps {
   cartItems: CartItem[];
   onNavigate: (page: string) => void;
   session: Session | null;
-  globalDiscountPercentage: number; // Nova prop
-  paymentOnDeliveryActive: boolean; // Nova prop
+  globalDiscountPercentage: number;
+  paymentOnDeliveryActive: boolean;
 }
 
 const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, session, globalDiscountPercentage, paymentOnDeliveryActive }) => {
-  const { headerData, isLoading: isHeaderLoading } = usePageHeader('checkout'); // Usando o hook
+  const { headerData, isLoading: isHeaderLoading } = usePageHeader('checkout');
   
-  // --- START: Empty Cart Check ---
   if (cartItems.length === 0) {
-    // Redireciona se o carrinho estiver vazio
     useEffect(() => {
       onNavigate('cart');
     }, [onNavigate]);
     
-    // Renderiza um estado de carregamento brevemente
     return <div className="flex justify-center items-center p-8 h-screen"><Loader2 className="animate-spin" size={32} /></div>;
   }
-  // --- END: Empty Cart Check ---
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -54,11 +44,11 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
   const [error, setError] = useState<string | null>(null);
   const [cashbackBalance, setCashbackBalance] = useState(0);
   const [cashbackToApply, setCashbackToApply] = useState('');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'mercadopago' | 'cod'>('mercadopago');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'cod' | 'manual'>('manual'); // 'manual' substitui 'mercadopago'
 
   useEffect(() => {
     const fetchProfile = async (userId: string) => {
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('profiles')
             .select('full_name, saldo_cashback')
             .eq('id', userId)
@@ -79,12 +69,14 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   }, [session]);
   
-  // Se o COD estiver ativo e for a única opção, seleciona COD por padrão
+  // Define o método de pagamento padrão
   useEffect(() => {
-    if (paymentOnDeliveryActive && !selectedShipping) {
+    if (paymentOnDeliveryActive) {
         setSelectedPaymentMethod('cod');
+    } else {
+        setSelectedPaymentMethod('manual');
     }
-  }, [paymentOnDeliveryActive, selectedShipping]);
+  }, [paymentOnDeliveryActive]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -97,10 +89,8 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
   };
 
   const calculateItemPrice = (item: CartItem) => {
-    // Prioriza o preço da variante, depois o discount_price do produto, depois o preço base do produto
     let price = item.selectedVariant.price ?? item.discount_price ?? item.price;
 
-    // Se não houver discount_price individual ou da variante, aplica o desconto global
     if (item.selectedVariant.price === undefined && item.discount_price === undefined && globalDiscountPercentage > 0) {
       price = item.price * (1 - (globalDiscountPercentage / 100));
     }
@@ -216,30 +206,33 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
           to_name: formData.fullName,
           customer_email: formData.email,
           order_id: newOrderId,
-          message: formattedCartItems // Usando a string formatada
+          message: formattedCartItems
         },
         "jOZo1dRNn4uZBaV9T"
       );
       console.log("E-mail de confirmação enviado com sucesso!");
     } catch (emailError: any) {
       console.error("Falha ao enviar e-mail de confirmação:", emailError);
-      // Não interrompe o fluxo de checkout, apenas loga o erro
     }
-
-    // IGNORANDO MELHOR ENVIO CONFORME SOLICITADO
-    // supabase.functions.invoke('add-shipment-to-cart', { body: { orderId: newOrderId } })
-    //   .then(({ error: functionError }) => {
-    //     if (functionError) console.error('Erro ao registrar no Melhor Envio:', functionError);
-    //   });
       
     return newOrderId;
   };
 
-  const handlePaymentOnDeliverySubmit = async () => {
+  const handleFinalizeOrder = async () => {
     if (!selectedShipping) {
       setError('Por favor, selecione uma opção de frete antes de finalizar.');
       return;
     }
+    
+    // Validação básica dos campos de endereço
+    const requiredFields = ['fullName', 'email', 'document', 'postalCode', 'street', 'number', 'neighborhood', 'city', 'state'];
+    const missingField = requiredFields.find(field => !formData[field as keyof typeof formData]);
+    
+    if (missingField) {
+        setError(`Por favor, preencha o campo obrigatório: ${missingField}.`);
+        return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -248,7 +241,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       await createOrderAndNotify('Processando');
       
       // 2. Sucesso
-      handleOrderSuccess('COD'); // Passa um ID fictício para sucesso
+      handleOrderSuccess('MANUAL_PAYMENT'); 
     } catch (e: any) {
       handleOrderError(e);
     } finally {
@@ -256,114 +249,6 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   };
   
-  const handlePaymentSubmit = async (paymentFormData: any) => {
-    if (!selectedShipping) {
-      setError('Por favor, selecione uma opção de frete antes de pagar.');
-      return;
-    }
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      // 1. Criar o pedido no banco de dados (status inicial 'Processando')
-      const newOrderId = await createOrderAndNotify('Processando');
-      
-      const amount = finalTotal;
-      const email = formData.email;
-      const docNumber = formData.document;
-      
-      // --- CORREÇÃO AQUI: Extraindo dados do Brick ---
-      const { 
-        token, 
-        paymentMethodId, 
-        issuerId: issuer, // O Brick usa issuerId
-        installments, 
-      } = paymentFormData;
-      
-      // O Brick pode retornar paymentMethodId ou payment_method_id
-      const finalPaymentMethodId = paymentMethodId || paymentFormData.payment_method_id;
-      
-      // Determinar o tipo de identificação
-      const identificationType = docNumber ? (docNumber.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF') : undefined;
-
-      // 2. Validação de Campos Essenciais
-      const requiredFields = [
-        { value: amount, name: 'transaction_amount' },
-        { value: finalPaymentMethodId, name: 'payment_method_id' }, 
-        { value: email, name: 'payer.email' },
-        { value: identificationType, name: 'payer.identification.type' },
-        { value: docNumber, name: 'payer.identification.number' }
-      ];
-      
-      // Adicionar validações específicas para Cartão
-      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
-          requiredFields.push(
-              { value: token, name: 'token' },
-              { value: installments, name: 'installments' },
-              { value: issuer, name: 'issuer_id' }
-          );
-          
-          // Se o token estiver ausente para cartão, lançar erro específico
-          if (!token) {
-              throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
-          }
-      }
-
-      const missingField = requiredFields.find(field => !field.value);
-      if (missingField) {
-        throw new Error(`Dados incompletos para processar o pagamento. Campo faltando: ${missingField.name}`);
-      }
-
-      // 3. Montar o Payload para a Edge Function (Formato estrito do MP)
-      const payloadToEdgeFunction: any = {
-        transaction_amount: amount,
-        payment_method_id: finalPaymentMethodId, 
-        external_reference: newOrderId,
-        payer: {
-          email: email,
-          identification: {
-            type: identificationType,
-            number: docNumber
-          }
-        }
-      };
-      
-      // Adicionar campos específicos de Cartão
-      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
-          payloadToEdgeFunction.token = token;
-          payloadToEdgeFunction.installments = installments;
-          payloadToEdgeFunction.issuer_id = issuer;
-      }
-      
-      console.log("PAYLOAD ENVIADO PARA EDGE FUNCTION:", payloadToEdgeFunction);
-
-      // 4. Chamar a Edge Function
-      const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
-        body: payloadToEdgeFunction
-      });
-
-      if (paymentError) {
-        // Erro de invocação da função (rede, timeout, etc.)
-        throw new Error(`Erro de comunicação com o servidor: ${paymentError.message}`);
-      }
-      
-      if (paymentResult.error) {
-        // Erro retornado pela Edge Function (geralmente erro da API do MP)
-        throw new Error(paymentResult.error);
-      }
-      
-      console.log("RETORNO FINAL DA EDGE FUNCTION:", paymentResult);
-
-      // 5. Sucesso
-      handleOrderSuccess(newOrderId);
-
-    } catch (e: any) {
-      handleOrderError(e);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const formatPrice = (price: number) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   if (isHeaderLoading) {
@@ -374,7 +259,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     <>
       <PageHeader 
         title={headerData?.title || "Finalizar Compra"}
-        description={headerData?.description || "Preencha seus dados, escolha o frete e finalize o pagamento."}
+        description={headerData?.description || "Preencha seus dados, escolha o frete e finalize o pedido."}
         imageUrl={headerData?.image_url}
       />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -447,18 +332,10 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
                 <div className="bg-white p-6 rounded-lg border border-gray-200">
                   <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2"><Lock size={24} /> 3. Pagamento</h2>
                   {error && <div className="flex items-center gap-2 text-red-700 bg-red-100 p-3 rounded-md mb-4"><AlertCircle size={20} /> {error}</div>}
-                  {isSubmitting && <div className="flex justify-center items-center gap-2 text-gray-600 p-4"><Loader2 className="animate-spin" /> Processando seu pedido e pagamento...</div>}
+                  {isSubmitting && <div className="flex justify-center items-center gap-2 text-gray-600 p-4"><Loader2 className="animate-spin" /> Processando seu pedido...</div>}
                   
                   {/* Payment Method Selector */}
                   <div className="mb-6 space-y-3">
-                    <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'mercadopago' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
-                        <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'mercadopago'} onChange={() => setSelectedPaymentMethod('mercadopago')} className="hidden" />
-                        <div className="flex items-center gap-3">
-                            <img src="/mercado-pago-logo-2.png" alt="Mercado Pago" className="w-8 h-8 object-contain" />
-                            <p className="font-semibold text-gray-900">Cartão, Pix ou Boleto (Mercado Pago)</p>
-                        </div>
-                    </label>
-                    
                     {paymentOnDeliveryActive && (
                         <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'cod' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
                             <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'cod'} onChange={() => setSelectedPaymentMethod('cod')} className="hidden" />
@@ -468,32 +345,28 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
                             </div>
                         </label>
                     )}
+                    <label className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedPaymentMethod === 'manual' ? 'bg-red-50 border-red-500' : 'border-gray-200 hover:border-gray-400'}`}>
+                        <input type="radio" name="paymentMethod" checked={selectedPaymentMethod === 'manual'} onChange={() => setSelectedPaymentMethod('manual')} className="hidden" />
+                        <div className="flex items-center gap-3">
+                            <FileText className="w-8 h-8 text-blue-600" />
+                            <p className="font-semibold text-gray-900">Pagamento Manual (Transferência/PIX)</p>
+                        </div>
+                    </label>
                   </div>
 
-                  {/* Mercado Pago Brick */}
-                  {selectedPaymentMethod === 'mercadopago' && (
-                    <div style={{ display: isSubmitting ? 'none' : 'block' }}>
-                      <MercadoPagoBrick
-                        amount={finalTotal}
-                        onPaymentSuccess={() => {}} // A lógica agora está no onSubmit
-                        onPaymentError={handleOrderError} // Usando handleOrderError para capturar erros do MP
-                        orderId="" // O ID do pedido será gerado dentro do onSubmit
-                        onSubmit={handlePaymentSubmit}
-                      />
-                    </div>
-                  )}
+                  {/* Finalize Button */}
+                  <button
+                      onClick={handleFinalizeOrder}
+                      disabled={isSubmitting}
+                      className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                      {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Lock size={20} />}
+                      Finalizar Pedido
+                  </button>
                   
-                  {/* COD Button */}
-                  {selectedPaymentMethod === 'cod' && (
-                    <button
-                        onClick={handlePaymentOnDeliverySubmit}
-                        disabled={isSubmitting}
-                        className="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-colors disabled:bg-green-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <DollarSign size={20} />}
-                        Finalizar Pedido (Pagar na Entrega)
-                    </button>
-                  )}
+                  <p className="text-xs text-gray-500 mt-3 text-center">
+                    Ao finalizar, seu pedido será criado com status "Processando". Você receberá instruções de pagamento por e-mail.
+                  </p>
                 </div>
               )}
             </div>
