@@ -272,14 +272,16 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       const email = formData.email;
       const docNumber = formData.document;
       
-      // Dados retornados pelo Brick (paymentFormData)
+      // --- CORREÇÃO AQUI: Extraindo paymentMethodId corretamente ---
       const { 
         token, 
-        paymentMethodId, 
+        paymentMethodId, // O Brick deve fornecer este campo
         issuer, 
         installments, 
-        identificationType: docType, 
       } = paymentFormData;
+      
+      // Se o paymentMethodId não vier diretamente, tentamos extrair de outras formas
+      const finalPaymentMethodId = paymentMethodId || paymentFormData.payment_method_id;
       
       // Determinar o tipo de identificação
       const identificationType = docNumber ? (docNumber.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF') : undefined;
@@ -287,14 +289,14 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // 2. Validação de Campos Essenciais
       const requiredFields = [
         { value: amount, name: 'transaction_amount' },
-        { value: paymentMethodId, name: 'payment_method_id' },
+        { value: finalPaymentMethodId, name: 'payment_method_id' }, // Usando o valor corrigido
         { value: email, name: 'payer.email' },
         { value: identificationType, name: 'payer.identification.type' },
         { value: docNumber, name: 'payer.identification.number' }
       ];
       
       // Adicionar validações específicas para Cartão
-      if (paymentMethodId && paymentMethodId !== 'pix' && paymentMethodId !== 'bolbradesco') {
+      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
           requiredFields.push(
               { value: token, name: 'token' },
               { value: installments, name: 'installments' },
@@ -315,7 +317,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // 3. Montar o Payload para a Edge Function (Formato estrito do MP)
       const payloadToEdgeFunction: any = {
         transaction_amount: amount,
-        payment_method_id: paymentMethodId,
+        payment_method_id: finalPaymentMethodId, // Usando o valor corrigido
         external_reference: newOrderId,
         payer: {
           email: email,
@@ -327,7 +329,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       };
       
       // Adicionar campos específicos de Cartão
-      if (paymentMethodId && paymentMethodId !== 'pix' && paymentMethodId !== 'bolbradesco') {
+      if (finalPaymentMethodId && finalPaymentMethodId !== 'pix' && finalPaymentMethodId !== 'bolbradesco') {
           payloadToEdgeFunction.token = token;
           payloadToEdgeFunction.installments = installments;
           payloadToEdgeFunction.issuer_id = issuer;
