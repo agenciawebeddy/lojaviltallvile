@@ -3,7 +3,7 @@ import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 
 const MERCADO_PAGO_PUBLIC_KEY = 'APP_USR-20aecbec-5586-45ad-aa8d-eed850bc6e08'; 
 
-// Inicializa o Mercado Pago diretamente, pois a chave já está definida.
+// Inicializa o Mercado Pago.
 initMercadoPago(MERCADO_PAGO_PUBLIC_KEY, { locale: 'pt-BR' });
 
 interface MercadoPagoBrickProps {
@@ -11,7 +11,7 @@ interface MercadoPagoBrickProps {
   onPaymentSuccess: (paymentId: string, status: string) => void;
   onPaymentError: (error: any) => void;
   onSubmit: (formData: any) => Promise<void>;
-  orderId: string; // Mantido para compatibilidade, mas a lógica principal está no onSubmit
+  orderId: string; // Mantido para compatibilidade
 }
 
 const MercadoPagoBrick: React.FC<MercadoPagoBrickProps> = ({ amount, onPaymentError, onSubmit }) => {
@@ -20,7 +20,7 @@ const MercadoPagoBrick: React.FC<MercadoPagoBrickProps> = ({ amount, onPaymentEr
     amount: amount,
   };
 
-  // Customização simplificada para evitar erros de propriedades inválidas
+  // Customização simplificada e correta para suportar todos os métodos
   const customization = {
     paymentMethods: {
       creditCard: 'all',

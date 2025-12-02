@@ -14,6 +14,8 @@ serve(async (req) => {
 
   try {
     const paymentData = await req.json();
+    console.log("PAYMENT_DATA_RECEBIDO:", paymentData); // Log para depuração
+    
     const accessToken = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN');
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -25,38 +27,54 @@ serve(async (req) => {
     }
     
     // --- Validação de Campos Obrigatórios ---
-    const requiredFields = [
-        'transaction_amount', 'token', 'installments', 'payment_method_id', 'external_reference'
+    const requiredBaseFields = [
+        'transaction_amount', 'payment_method_id', 'external_reference'
     ];
     
-    for (const field of requiredFields) {
+    for (const field of requiredBaseFields) {
         if (!paymentData[field]) {
-            throw new Error(`Dados incompletos: Campo obrigatório '${field}' ausente.`);
+            throw new Error(`Dados incompletos para processar o pagamento. Campo obrigatório '${field}' ausente.`);
         }
     }
     
-    // Validação do Payer (obrigatório para todos os fluxos de pagamento que estamos usando)
-    if (!paymentData.payer || !paymentData.payer.email || !paymentData.payer.identification || !paymentData.payer.identification.number) {
-        throw new Error('Dados incompletos: Informações do pagador (email e CPF/CNPJ) são obrigatórias.');
+    const isCardPayment = paymentData.payment_method_id !== 'pix' && paymentData.payment_method_id !== 'bolbradesco';
+
+    if (isCardPayment) {
+        const requiredCardFields = ['token', 'installments', 'issuer_id'];
+        for (const field of requiredCardFields) {
+            if (!paymentData[field]) {
+                throw new Error(`Dados incompletos para pagamento com cartão. Campo obrigatório '${field}' ausente.`);
+            }
+        }
+    }
+
+    // Validação do Payer (opcional, mas se existir, deve ser completo)
+    if (paymentData.payer) {
+        if (!paymentData.payer.email || !paymentData.payer.identification || !paymentData.payer.identification.number) {
+            throw new Error('Dados incompletos: Se o pagador for fornecido, email e CPF/CNPJ são obrigatórios.');
+        }
+    } else {
+        // Para a maioria dos fluxos, o payer é obrigatório. Se o Brick não enviou, o frontend falhou.
+        // Mas vamos permitir que o MP retorne o erro se for o caso.
     }
 
     // 1. Construção do payload estrito do Mercado Pago
     const paymentPayload: any = {
       transaction_amount: paymentData.transaction_amount,
-      token: paymentData.token,
       description: `Pedido #${paymentData.external_reference.substring(0, 8)}`,
-      installments: paymentData.installments,
+      installments: paymentData.installments || 1, // Default para 1 se não for cartão
       payment_method_id: paymentData.payment_method_id,
-      issuer_id: paymentData.issuer_id, // Opcional, mas incluído se vier
       external_reference: paymentData.external_reference,
-      payer: {
-        email: paymentData.payer.email,
-        identification: paymentData.payer.identification
-      }
+      payer: paymentData.payer,
     };
+    
+    // Adicionar campos específicos de Cartão
+    if (isCardPayment) {
+        paymentPayload.token = paymentData.token;
+        paymentPayload.issuer_id = paymentData.issuer_id;
+    }
 
-    // 2. Filtrar campos undefined/null (garantindo que apenas dados válidos sejam enviados)
-    // Isso é crucial para issuer_id, que pode ser nulo para PIX/Boleto
+    // 2. Filtrar campos undefined/null
     const cleanPayload = Object.fromEntries(
         Object.entries(paymentPayload).filter(([_, v]) => v !== undefined && v !== null)
     );
@@ -83,24 +101,28 @@ serve(async (req) => {
       body: JSON.stringify(cleanPayload),
     });
 
-    const responseData = await response.json();
+    const responseBody = await response.json();
+    console.log("MP_RESPONSE:", responseBody); // Log para depuração
 
-    if (!response.ok || (responseData.status !== 'approved' && responseData.status !== 'in_process')) {
-      console.error('Erro na API do Mercado Pago:', responseData);
+    if (!response.ok || (responseBody.status !== 'approved' && responseBody.status !== 'in_process' && responseBody.status !== 'pending')) {
       
       let errorMessage = 'Falha ao processar o pagamento.';
-      if (responseData.message) {
-          errorMessage = responseData.message;
-      } else if (responseData.cause && responseData.cause.length > 0) {
+      
+      // Tratamento de erro específico para token inválido
+      if (responseBody.message === 'Invalid card token') {
+          errorMessage = 'Token do cartão inválido ou expirado. Por favor, tente novamente com os dados corretos.';
+      } else if (responseBody.message) {
+          errorMessage = responseBody.message;
+      } else if (responseBody.cause && responseBody.cause.length > 0) {
           // Tenta extrair a causa do erro
-          errorMessage = responseData.cause[0].description || responseData.cause[0].code || 'Erro desconhecido do Mercado Pago.';
+          errorMessage = responseBody.cause[0].description || responseBody.cause[0].code || 'Erro desconhecido do Mercado Pago.';
       }
       
       throw new Error(errorMessage);
     }
 
     // Se o pagamento for aprovado, atualiza o status do pedido no Supabase
-    if (responseData.status === 'approved') {
+    if (responseBody.status === 'approved') {
         const { error: updateError } = await supabaseAdmin
             .from('orders')
             .update({ status: 'Pago' })
@@ -112,7 +134,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, paymentId: responseData.id, status: responseData.status }),
+      JSON.stringify({ success: true, paymentId: responseBody.id, status: responseBody.status }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

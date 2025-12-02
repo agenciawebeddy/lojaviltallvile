@@ -244,9 +244,6 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
     }
   };
   
-  // Removendo validateCardToken, pois a validação será feita na Edge Function
-  // e o Brick deve fornecer o token diretamente.
-
   const handlePaymentSubmit = async (paymentFormData: any) => {
     if (!selectedShipping) {
       setError('Por favor, selecione uma opção de frete antes de pagar.');
@@ -272,20 +269,32 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
         identificationType: docType, 
       } = paymentFormData;
       
+      // Determinar o tipo de identificação
+      const identificationType = docNumber ? (docNumber.replace(/\D/g, '').length > 11 ? 'CNPJ' : 'CPF') : undefined;
+
       // 2. Validação de Campos Essenciais
       const requiredFields = [
         { value: amount, name: 'transaction_amount' },
         { value: paymentMethodId, name: 'payment_method_id' },
-        { value: installments, name: 'installments' },
-        { value: token, name: 'token' },
         { value: email, name: 'payer.email' },
-        { value: docType, name: 'payer.identification.type' },
+        { value: identificationType, name: 'payer.identification.type' },
         { value: docNumber, name: 'payer.identification.number' }
       ];
       
-      // issuer_id é opcional para alguns métodos, mas o Brick deve fornecê-lo para cartões.
-      // Se for PIX/Boleto, issuer_id pode ser nulo/undefined.
-      
+      // Adicionar validações específicas para Cartão
+      if (paymentMethodId && paymentMethodId !== 'pix' && paymentMethodId !== 'bolbradesco') {
+          requiredFields.push(
+              { value: token, name: 'token' },
+              { value: installments, name: 'installments' },
+              { value: issuer, name: 'issuer_id' }
+          );
+          
+          // Se o token estiver ausente para cartão, lançar erro específico
+          if (!token) {
+              throw new Error("Falha ao tokenizar o cartão. Tente novamente.");
+          }
+      }
+
       const missingField = requiredFields.find(field => !field.value);
       if (missingField) {
         throw new Error(`Dados incompletos para processar o pagamento. Campo faltando: ${missingField.name}`);
@@ -294,21 +303,25 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
       // 3. Montar o Payload para a Edge Function (Formato estrito do MP)
       const payloadToEdgeFunction: any = {
         transaction_amount: amount,
-        token: token,
-        installments: installments,
         payment_method_id: paymentMethodId,
-        issuer_id: issuer, // Pode ser undefined/null, a Edge Function irá filtrar
         external_reference: newOrderId,
         payer: {
           email: email,
           identification: {
-            type: docType || 'CPF', // Garantindo um tipo padrão se ausente
+            type: identificationType,
             number: docNumber
           }
         }
       };
       
-      console.log("Payload enviado para a Edge Function:", payloadToEdgeFunction);
+      // Adicionar campos específicos de Cartão
+      if (paymentMethodId && paymentMethodId !== 'pix' && paymentMethodId !== 'bolbradesco') {
+          payloadToEdgeFunction.token = token;
+          payloadToEdgeFunction.installments = installments;
+          payloadToEdgeFunction.issuer_id = issuer;
+      }
+      
+      console.log("PAYLOAD ENVIADO PARA EDGE FUNCTION:", payloadToEdgeFunction);
 
       // 4. Chamar a Edge Function
       const { data: paymentResult, error: paymentError } = await supabase.functions.invoke('process-mercadopago-payment', {
@@ -325,7 +338,7 @@ const CheckoutPage: React.FC<CheckoutPageProps> = ({ cartItems, onNavigate, sess
         throw new Error(paymentResult.error);
       }
       
-      console.log("Retorno final da Edge Function:", paymentResult);
+      console.log("RETORNO FINAL DA EDGE FUNCTION:", paymentResult);
 
       // 5. Sucesso
       handleOrderSuccess(newOrderId);
