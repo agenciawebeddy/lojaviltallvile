@@ -25,8 +25,7 @@ const MercadoPagoBrick: React.FC<MercadoPagoBrickProps> = ({ amount, onPaymentEr
     paymentMethods: {
       creditCard: 'all',
       debitCard: 'all',
-      ticket: 'all',
-      pix: 'all',
+          
     },
     visual: {
       style: {
