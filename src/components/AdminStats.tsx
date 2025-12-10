@@ -22,7 +22,8 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
     <div className="bg-white p-5 rounded-lg border border-gray-200 flex items-center justify-between shadow-sm">
         <div>
             <p className="text-sm font-medium text-gray-500">{title}</p>
-            <p className={`text-3xl font-bold text-gray-900 mt-1`}>{value}</p>
+            {/* Reduzindo de text-3xl para text-2xl */}
+            <p className={`text-2xl font-bold text-gray-900 mt-1`}>{value}</p>
         </div>
         <div className={`p-3 rounded-full ${bgColor}`}>
             {React.cloneElement(icon as React.ReactElement, { className: `w-6 h-6 ${color}` })}
