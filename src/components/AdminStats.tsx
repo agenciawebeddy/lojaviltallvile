@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../integrations/supabase/client';
-import { Loader2, AlertCircle, ShoppingBag, Users, Package, Gift, Clock, DollarSign } from 'lucide-react';
+import { Loader2, AlertCircle, ShoppingBag, Users, Package, Gift, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface Stats {
@@ -10,7 +10,7 @@ interface Stats {
     total_customers: number;
     total_products: number;
     total_cashback_credited: number;
-    total_revenue: number; // Total vendido em R$
+    total_revenue: number; // Assumindo que este é o valor total dos pedidos pagos
 }
 
 const formatPrice = (price: number | null | undefined) => {
@@ -40,6 +40,7 @@ const AdminStats: React.FC = () => {
             setIsLoading(true);
             setError(null);
             
+            // Chamada RPC para obter estatísticas
             const { data, error: rpcError } = await supabase.rpc('get_admin_dashboard_stats');
 
             if (rpcError) {
