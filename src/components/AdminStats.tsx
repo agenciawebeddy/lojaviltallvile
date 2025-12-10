@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../integrations/supabase/client';
-import { Loader2, AlertCircle, ShoppingBag, Users, Package, Gift, Clock } from 'lucide-react';
+import { Loader2, AlertCircle, ShoppingBag, Users, Package, Gift, Clock, DollarSign } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface Stats {
@@ -10,6 +10,7 @@ interface Stats {
     total_customers: number;
     total_products: number;
     total_cashback_credited: number;
+    total_revenue: number; // Total vendido em R$
 }
 
 const formatPrice = (price: number) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -71,6 +72,13 @@ const AdminStats: React.FC = () => {
             {/* Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <StatCard 
+                    title="Total Vendido" 
+                    value={formatPrice(stats.total_revenue)} 
+                    icon={<DollarSign />} 
+                    color="text-green-600"
+                    bgColor="bg-green-100"
+                />
+                <StatCard 
                     title="Total de Pedidos" 
                     value={stats.total_orders} 
                     icon={<ShoppingBag />} 
@@ -95,13 +103,6 @@ const AdminStats: React.FC = () => {
                     title="Cashback Creditado" 
                     value={formatPrice(stats.total_cashback_credited)} 
                     icon={<Gift />} 
-                    color="text-green-500"
-                    bgColor="bg-green-100"
-                />
-                <StatCard 
-                    title="Pedidos Processando" 
-                    value={stats.processing_orders} 
-                    icon={<Clock />} 
                     color="text-red-500"
                     bgColor="bg-red-100"
                 />
