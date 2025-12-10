@@ -263,17 +263,20 @@ const UserDashboardPage = () => {
                                 ) : (
                                     orders.map(order => (
                                         <div key={order.id} className="bg-white rounded-lg border border-gray-200">
-                                            <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => toggleOrderDetails(order.id)}>
-                                                <div>
+                                            <div 
+                                                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors" 
+                                                onClick={() => toggleOrderDetails(order.id)}
+                                            >
+                                                <div className="mb-2 sm:mb-0">
                                                     <p className="font-bold text-gray-900">Pedido #{order.id.substring(0, 8)}</p>
                                                     <p className="text-sm text-gray-600">Feito em {formatDate(order.created_at)}</p>
                                                 </div>
-                                                <div className="flex items-center gap-6">
+                                                <div className="flex items-center justify-between w-full sm:w-auto gap-4">
                                                     <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getStatusClass(order.status)}`}>
                                                         {order.status}
                                                     </span>
                                                     <p className="text-lg font-bold text-gray-900">{formatPrice(order.total_amount)}</p>
-                                                    {expandedOrderId === order.id ? <ChevronUp /> : <ChevronDown />}
+                                                    {expandedOrderId === order.id ? <ChevronUp className="flex-shrink-0" /> : <ChevronDown className="flex-shrink-0" />}
                                                 </div>
                                             </div>
                                             {expandedOrderId === order.id && (
