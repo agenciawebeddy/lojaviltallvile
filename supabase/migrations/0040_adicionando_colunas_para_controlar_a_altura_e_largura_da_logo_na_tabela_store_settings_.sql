@@ -1,0 +1,3 @@
+ALTER TABLE public.store_settings
+ADD COLUMN logo_height INTEGER DEFAULT 40,
+ADD COLUMN logo_width INTEGER DEFAULT 150;

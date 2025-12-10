@@ -1,0 +1,2 @@
+ALTER TABLE public.product_variants
+ADD COLUMN color_name TEXT;
