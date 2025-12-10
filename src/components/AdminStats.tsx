@@ -13,7 +13,10 @@ interface Stats {
     total_revenue: number; // Total vendido em R$
 }
 
-const formatPrice = (price: number) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatPrice = (price: number | null | undefined) => {
+    const numericPrice = price ?? 0;
+    return numericPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
 
 const StatCard: React.FC<{ title: string, value: string | number, icon: React.ReactNode, color: string, bgColor: string }> = ({ title, value, icon, color, bgColor }) => (
     <div className="bg-white p-5 rounded-lg border border-gray-200 flex items-center justify-between shadow-sm">
